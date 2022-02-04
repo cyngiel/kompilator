@@ -8,6 +8,7 @@
 ID	            [a-z][a-z0-9]*
 DIGIT           [0-9]
 NUM             {DIGIT}+
+NUMREAL         {DIGIT}+(.{DIGIT}+)?
 ASSIGN          ":="
 
 %%
@@ -17,10 +18,13 @@ begin           {return T_BEGIN;}
 end             {return T_END;}
 write           {return T_WRITE;}
 mod             {return T_MOD;}
+real            {yylval = (vartype)real; return T_REAL;}
 integer	        {yylval = (vartype)integer; return T_INTEGER;}
+
 var             {return T_VAR;}
 {ID}	        {yylval=addtotable(string(yytext));return T_ID;}
-{NUM}           {yylval=addtotable(string(yytext));symtable[yylval].value = stoi(yytext);return T_NUM;}
+{NUM}           {yylval=addtotable(string(yytext));symtable[yylval].value = stoi(yytext);symtable[yylval].type = (vartype) integer; return T_NUM;}
+{NUMREAL}       {yylval=addtotable(string(yytext));symtable[yylval].value = stoi(yytext);symtable[yylval].type = (vartype) real; return T_NUM;}
 {ASSIGN}        {return T_ASSIGN;}
 
 .	            {return yytext[0];}

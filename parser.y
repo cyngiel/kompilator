@@ -9,13 +9,15 @@ int nextTempVariable = 0;
 enum varmode {address, value};
 ofstream outFile;
 vector<int> identifier_indexes;
-void gencode(const string m, int v1, varmode lv1, int v2, varmode lv2, int v3,varmode lv3);
+void gencode(const string m, int v1, int v2, int v3, vartype type);
+int convertIfNeeded(int v1, vartype type);
 %}
 
 %token T_ID
 %token T_PROGRAM
 %token T_VAR
 %token T_INTEGER
+%token T_REAL
 %token T_BEGIN
 %token T_END
 %token T_NUM
@@ -27,8 +29,9 @@ void gencode(const string m, int v1, varmode lv1, int v2, varmode lv2, int v3,va
 start: program {
       outFile << "exit" << endl;
       int i;
+      std::cout << "name\t" << "type\t" << "address\t"<< "value\t"  << endl;
       for(i=0;i<symtable.size();i++)
-      std::cout << symtable[i].name << ' ' << symtable[i].type << ' ' << symtable[i].address << ' ' << symtable[i].value << endl;
+      std::cout << symtable[i].name << '\t' << symtable[i].type << '\t' << symtable[i].address << '\t' << symtable[i].value << endl;
     }
 program: T_PROGRAM T_ID '(' start_identifiers ')' ';' 
 	declarations 
@@ -47,15 +50,23 @@ declarations:
         symtable[identifier_indexes[i]].type = (vartype)$5; 
         symtable[identifier_indexes[i]].address = nextAddress;
         //gencode("read.i", nextAddress, (varmode)address, 0, (varmode)address, 0, (varmode)address);
-        nextAddress += 4;
+        
+        if(symtable[identifier_indexes[i]].type == (vartype)real){
+          nextAddress += 8;
+        } else {
+          nextAddress += 4;
+        }
+        
       }
 
       identifier_indexes.clear();
       }
 	|
 	
-	
-type: T_INTEGER {$$ = (vartype)$1;}
+type: standard_type {$$ = $1;}
+
+standard_type: T_INTEGER {$$ = (vartype)$1;}
+              | T_REAL {$$ = (vartype)$1;}
 	
 compound_statement: T_BEGIN statement_list T_END '.' {}
 
@@ -63,200 +74,228 @@ statement_list: statement
   | statement_list ';' statement
 
 statement: T_ID T_ASSIGN expresion {symtable[$1].value = symtable[$3].value; 
-                            if(symtable[$3].address == -1)
-                              gencode("mov.i", symtable[$3].value, (varmode)value, symtable[$1].address, (varmode)address, symtable[$3].address, (varmode)address);
-                            else
-                              gencode("mov.i", symtable[$3].address, (varmode)address, symtable[$1].address, (varmode)address, symtable[$3].address, (varmode)address);}
-        | T_WRITE '(' T_ID ')' {
-                            int v1; 
-                            varmode vl1;
+                            int v3 = $3;  
 
-                            if(symtable[$3].address < 0)
-                              {v1 = symtable[$3].value;
-                               vl1 = (varmode)value;
-                               }
-                            else{
-                              v1 = symtable[$3].address;
-                              vl1 = (varmode)address;
+                            int convIdx1 = convertIfNeeded($3, symtable[$1].type);
+                              if(convIdx1 >= 0){
+                                v3 = convIdx1;
                               }
 
-                              gencode("write.i", v1, vl1, v1, vl1, v1, vl1);
+                              gencode("mov", v3,$1,$1, symtable[$1].type);
+
+                            }
+        | T_WRITE '(' T_ID ')' {
+                            
+                              gencode("write", $3, $3, $3, symtable[$3].type);
                               }
 
 expresion:  expresion '+' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
+                            
                             symtable[retIdx].value = symtable[$1].value + symtable[$3].value; 
+
+                            if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
+                            else{
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
+                              }
 
                             $$ = retIdx;
 
-                            int v1, v2; 
-                            varmode vl1, vl2;
+                            int v1 = $1;
+                            int v2 = $3;
 
-                            if(symtable[$1].address < 0)
-                              {v1 = symtable[$1].value;
-                               vl1 = (varmode)value;
-                               }
-                            else{
-                              v1 = symtable[$1].address;
-                              vl1 = (varmode)address;
+                            int convIdx1 = convertIfNeeded($1, symtable[retIdx].type);
+                              if(convIdx1 >= 0){
+                                v1 = convIdx1;
+                              }
+                            int convIdx2 = convertIfNeeded($3, symtable[retIdx].type);
+                              if(convIdx2 >= 0){
+                                v2 = convIdx2;
                               }
 
-                            if(symtable[$3].address < 0)
-                              {v2 = symtable[$3].value;
-                              vl2 = (varmode)value;
-                              }
-                            else
-                              {v2 = symtable[$3].address;
-                              vl2 = (varmode)address;
-                              }
+                            gencode("add", v1, v2, retIdx, symtable[retIdx].type);
+                            }
 
-                            gencode("add.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
   | expresion '*' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
+                            
                             symtable[retIdx].value = symtable[$1].value * symtable[$3].value; 
 
-                            $$ = retIdx;
-
-                            int v1, v2; 
-                            varmode vl1, vl2;
-
-                            if(symtable[$1].address < 0)
-                              {v1 = symtable[$1].value;
-                               vl1 = (varmode)value;
-                               }
+                            if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
                             else{
-                              v1 = symtable[$1].address;
-                              vl1 = (varmode)address;
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
                               }
 
-                            if(symtable[$3].address < 0)
-                              {v2 = symtable[$3].value;
-                              vl2 = (varmode)value;
+                            $$ = retIdx;
+                            int v1 = $1;
+                            int v2 = $3;
+
+                            int convIdx1 = convertIfNeeded($1, symtable[retIdx].type);
+                              if(convIdx1 >= 0){
+                                v1 = convIdx1;
                               }
-                            else
-                              {v2 = symtable[$3].address;
-                              vl2 = (varmode)address;
+                            int convIdx2 = convertIfNeeded($3, symtable[retIdx].type);
+                              if(convIdx2 >= 0){
+                                v2 = convIdx2;
                               }
 
-                            gencode("mul.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
+                            gencode("mul", v1, v2, retIdx, symtable[retIdx].type);
+                            }
+
   | expresion '/' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
+                           
                             symtable[retIdx].value = symtable[$1].value / symtable[$3].value; 
 
-                            $$ = retIdx;
-
-                            int v1, v2; 
-                            varmode vl1, vl2;
-
-                            if(symtable[$1].address < 0)
-                              {v1 = symtable[$1].value;
-                               vl1 = (varmode)value;
-                               }
+                            if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
                             else{
-                              v1 = symtable[$1].address;
-                              vl1 = (varmode)address;
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
                               }
 
-                            if(symtable[$3].address < 0)
-                              {v2 = symtable[$3].value;
-                              vl2 = (varmode)value;
+                            $$ = retIdx;
+                            int v1 = $1;
+                            int v2 = $3;
+
+                            int convIdx1 = convertIfNeeded($1, symtable[retIdx].type);
+                              if(convIdx1 >= 0){
+                                v1 = convIdx1;
                               }
-                            else
-                              {v2 = symtable[$3].address;
-                              vl2 = (varmode)address;
+                            int convIdx2 = convertIfNeeded($3, symtable[retIdx].type);
+                              if(convIdx2 >= 0){
+                                v2 = convIdx2;
                               }
 
-                            gencode("div.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
+                            gencode("div", v1, v2, retIdx, symtable[retIdx].type);
+                            }
+
   | expresion '-' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
+                            
                             symtable[retIdx].value = symtable[$1].value - symtable[$3].value; 
 
-                            $$ = retIdx;
-
-                            int v1, v2; 
-                            varmode vl1, vl2;
-
-                            if(symtable[$1].address < 0)
-                              {v1 = symtable[$1].value;
-                               vl1 = (varmode)value;
-                               }
+                            if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
                             else{
-                              v1 = symtable[$1].address;
-                              vl1 = (varmode)address;
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
                               }
 
-                            if(symtable[$3].address < 0)
-                              {v2 = symtable[$3].value;
-                              vl2 = (varmode)value;
+                            $$ = retIdx;
+                            int v1 = $1;
+                            int v2 = $3;
+
+                            int convIdx1 = convertIfNeeded($1, symtable[retIdx].type);
+                              if(convIdx1 >= 0){
+                                v1 = convIdx1;
                               }
-                            else
-                              {v2 = symtable[$3].address;
-                              vl2 = (varmode)address;
+                            int convIdx2 = convertIfNeeded($3, symtable[retIdx].type);
+                              if(convIdx2 >= 0){
+                                v2 = convIdx2;
                               }
 
-                             gencode("sub.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
+                             gencode("sub", v1, v2, retIdx, symtable[retIdx].type);
+                             }
+
   | '-' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
-                            symtable[retIdx].value = 0 - symtable[$1].value ; 
+                            
+                            symtable[retIdx].value = 0 - symtable[$2].value ; 
 
-                            $$ = retIdx;
-
-                            int v1, v2; 
-                            varmode vl1, vl2;
-
-                            v1 = 0;
-                            vl1 = (varmode)value;
-
-                            if(symtable[$1].address < 0){
-                               v2 = symtable[$1].value;
-                               vl2 = (varmode)value;
-                               }
+                            if(symtable[$2].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
                             else{
-                              v2 = symtable[$1].address;
-                              vl2 = (varmode)address;
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
                               }
 
-                            gencode("sub.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
+                            $$ = retIdx;
+                            int v2 = $2;
+
+                            int convIdx2 = convertIfNeeded($2, symtable[retIdx].type);
+                              if(convIdx2 >= 0){
+                                v2 = convIdx2;
+                              }
+
+                            gencode("sub", v2, v2, retIdx, symtable[retIdx].type);
+                            }
+
   | expresion T_MOD expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                             symtable[retIdx].address = nextAddress;
-                            nextAddress +=4;
+                            
                             symtable[retIdx].value = 0 - symtable[$1].value ; 
 
-                            $$ = retIdx;
-
-                            int v1, v2; 
-                            varmode vl1, vl2;
-
-                            v1 = 0;
-                            vl1 = (varmode)value;
-
-                            if(symtable[$1].address < 0){
-                               v2 = symtable[$1].value;
-                               vl2 = (varmode)value;
-                               }
+                            if(symtable[$1].type == (vartype)real){
+                              symtable[retIdx].type = (vartype)real;
+                            }
                             else{
-                              v2 = symtable[$1].address;
-                              vl2 = (varmode)address;
+                              symtable[retIdx].type = (vartype)integer;
+                            }
+
+                            if(symtable[retIdx].type == (vartype)real){
+                                nextAddress += 8;
+                              } else {
+                                nextAddress += 4;
                               }
 
-                            gencode("mod.i", v1, vl1, v2, vl2, symtable[retIdx].address, (varmode)address);}
+                            $$ = retIdx;
+                            int v1 = $1;
+
+                            int convIdx1 = convertIfNeeded($1, symtable[retIdx].type);
+                              if(convIdx1 >= 0){
+                                v1 = convIdx1;
+                              }
+
+                            gencode("mod", v1, v1, retIdx, symtable[retIdx].type);
+                            }
+
   | '(' expresion ')' {$$ = $2;}
   | T_ID {$$ = $1;}
   | T_NUM {$$ = $1;}
@@ -312,39 +351,117 @@ for(i=0;i<symtable.size();i++)
 return -1;
 };
 
-void gencode(const string m, int v1, varmode lv1, int v2, varmode lv2, int v3,varmode lv3){
+
+void gencode(const string m, int v1, int v2, int v3, vartype type){
+
+  string vl1, vl2, vl3;
+
+
+  if(symtable[v1].address < 0){
+    vl1 = symtable[v1].name;
+    }
+  else{
+    vl1 = std::to_string(symtable[v1].address);
+    }
+
+  if(symtable[v2].address < 0){
+    vl2 = symtable[v2].name;
+    }
+  else{
+    vl2 = std::to_string(symtable[v2].address);
+    }
+
+  if(symtable[v3].address < 0){
+    vl3 = symtable[v3].name;
+    }
+  else{
+    vl3 = std::to_string(symtable[v3].address);
+    }
 
   string operation = m;
-  operation.append("\t");
-
-  if(m == "read.i" || m == "write.i"){
-    if(lv1 !=0)
-      operation.append("#");
-    operation.append(std::to_string(v1));
+  if(type == (vartype)real){
+    operation.append(".r");
+  } else {
+    operation.append(".i");
   }
-  else if(m == "mov.i"){
-    if(lv1 !=0)
-      operation.append("#");
-    operation.append(std::to_string(v1) + ", ");
 
-    if(lv2 !=0)
+  operation.append("\t\t");
+
+
+  if(m == "read" || m == "write"){
+    if(symtable[v1].address < 0)
       operation.append("#");
-    operation.append(std::to_string(v2));
+    operation.append(vl1);
+  }
+  else if(m == "mov"){
+    if(symtable[v1].address < 0)
+      operation.append("#");
+    operation.append(vl1 + ", ");
+
+    if(symtable[v2].address < 0)
+      operation.append("#");
+    operation.append(vl2);
   }
   else{
-
-    if(lv1 !=0)
+    if(symtable[v1].address < 0)
       operation.append("#");
-    operation.append(std::to_string(v1) + ", ");
+    operation.append(vl1 + ", ");
 
-    if(lv2 !=0)
+    if(symtable[v2].address < 0)
       operation.append("#");
-    operation.append(std::to_string(v2) + ", ");
+    operation.append(vl2 + ", ");
 
-    if(lv3 !=0)
+    if(symtable[v3].address < 0)
       operation.append("#");
-    operation.append(std::to_string(v3));
+    operation.append(vl3);
   }
 
   outFile << operation << endl;
+}
+
+int convertIfNeeded(int v1, vartype type){
+  int retId = -1;
+
+  if(symtable[v1].type != type){
+  string convertion;
+  string vl1, vl2, vl3;
+
+  int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
+  nextTempVariable++;
+  symtable[retIdx].address = nextAddress;
+  symtable[retIdx].value = symtable[v1].value ; 
+                      
+
+  if(type == (vartype)real){
+    convertion = "inttoreal.i\t";
+  }
+  else {
+    convertion = "realtoint.r\t";
+  }
+
+  if(symtable[v1].address < 0){
+    convertion.append("#");
+    vl1 = symtable[v1].name;
+    }
+  else{
+    vl1 = std::to_string(symtable[v1].address);
+  }
+  convertion.append(vl1 + ", ");
+
+  convertion.append(std::to_string(symtable[retIdx].address));
+
+  symtable[retIdx].type = type;
+
+  if(symtable[retIdx].type == (vartype)real){
+      nextAddress += 8;
+    } else {
+      nextAddress += 4;
+    }
+
+    outFile << convertion << endl;
+
+    retId = retIdx;
+  }
+
+  return retId;
 }
