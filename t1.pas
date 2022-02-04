@@ -10,3 +10,4 @@ h:= 5.0;
 g:=(x*g)+(y*h);
 write(g)
 end.
+asdasd
