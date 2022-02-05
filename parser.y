@@ -3,14 +3,18 @@
 #include "parser.hpp"
 #include <iostream>
 #include <fstream>
+#define YYERROR_VERBOSE 1
 
 int nextAddress = 0;
 int nextTempVariable = 0;
+int lineno;
+bool isGlobal = true;
 enum varmode {address, value};
 ofstream outFile;
 vector<int> identifier_indexes;
 void gencode(const string m, int v1, int v2, int v3, vartype type);
 int convertIfNeeded(int v1, vartype type);
+void addlineno();
 %}
 
 %token T_ID
@@ -24,70 +28,112 @@ int convertIfNeeded(int v1, vartype type);
 %token T_ASSIGN
 %token T_WRITE
 %token T_MOD
+%token T_PROCEDURE
+%token T_FUNCTION
 
 %%
 start: program {
       outFile << "exit" << endl;
       int i;
-      std::cout << "name\t" << "type\t" << "address\t"<< "value\t"  << endl;
+      std::cout << "name\t" << "type\t" << "address\t"<< "value\t"  << "global" << endl;
       for(i=0;i<symtable.size();i++)
-      std::cout << symtable[i].name << '\t' << symtable[i].type << '\t' << symtable[i].address << '\t' << symtable[i].value << endl;
+      std::cout << symtable[i].name << '\t' << symtable[i].type << '\t' << symtable[i].address << '\t' << symtable[i].value << '\t' << symtable[i].global << endl;
     }
+
 program: T_PROGRAM T_ID '(' start_identifiers ')' ';' 
-	declarations 
-  compound_statement
+      declarations {isGlobal = false;}
+      subprogram_declarations {
+                              isGlobal = true;
+                              outFile << "lab0" << endl;
+                              }
+      compound_statement{}
+
 
 start_identifiers: start_identifiers ',' T_ID | T_ID	
 	
 identifier_list: T_ID {identifier_indexes.push_back($1);}
-	| identifier_list ',' T_ID {identifier_indexes.push_back($3);}
+                | identifier_list ',' T_ID {identifier_indexes.push_back($3);}
 	
 	
 	
-declarations: 
-	declarations T_VAR identifier_list ':' type ';' { 
-      for(int i = 0; i < identifier_indexes.size(); i++){
-        symtable[identifier_indexes[i]].type = (vartype)$5; 
-        symtable[identifier_indexes[i]].address = nextAddress;
-        //gencode("read.i", nextAddress, (varmode)address, 0, (varmode)address, 0, (varmode)address);
-        
-        if(symtable[identifier_indexes[i]].type == (vartype)real){
-          nextAddress += 8;
-        } else {
-          nextAddress += 4;
-        }
-        
-      }
+declarations: declarations T_VAR identifier_list ':' type ';' { 
+            for(int i = 0; i < identifier_indexes.size(); i++){
+              symtable[identifier_indexes[i]].type = (vartype)$5; 
+              symtable[identifier_indexes[i]].address = nextAddress;
+              //gencode("read.i", nextAddress, (varmode)address, 0, (varmode)address, 0, (varmode)address);
+              
+              if(symtable[identifier_indexes[i]].type == (vartype)real){
+                nextAddress += 8;
+              } else {
+                nextAddress += 4;
+              }
+              
+            }
 
-      identifier_indexes.clear();
-      }
-	|
+            identifier_indexes.clear();
+            }
+            |/* empty */
 	
 type: standard_type {$$ = $1;}
 
 standard_type: T_INTEGER {$$ = (vartype)$1;}
               | T_REAL {$$ = (vartype)$1;}
-	
-compound_statement: T_BEGIN statement_list T_END '.' {}
+
+
+subprogram_declarations: subprogram_declarations subprogram_declaration ';'
+                        | /* empty */
+
+subprogram_declaration: 
+                      subprogram_head 
+                      declarations 
+                      sub_compound_statement{
+                                          outFile << "leave" << endl;
+                                          outFile << "return" << endl;
+                                          }
+
+
+subprogram_head: T_FUNCTION T_ID arguments ':' standard_type ';'
+               | T_PROCEDURE T_ID arguments ';' {
+                 symtable[$2].type = (vartype)procedure;
+                 outFile << symtable[$2].name + "+" << endl;
+               }
+
+arguments: '(' parameter_list ')'
+        |
+
+parameter_list: identifier_list ':' type
+              | parameter_list ';' identifier_list ':' type
+
+
+compound_statement: T_BEGIN statement_list T_END '.'{}
+
+sub_compound_statement: T_BEGIN statement_list T_END {}
 
 statement_list: statement 
-  | statement_list ';' statement
+              | statement_list ';' statement
+              |
 
-statement: T_ID T_ASSIGN expresion {symtable[$1].value = symtable[$3].value; 
-                            int v3 = $3;  
+statement: T_ID T_ASSIGN expresion {
+                                  symtable[$1].value = symtable[$3].value; 
+                                  int v3 = $3;  
 
-                            int convIdx1 = convertIfNeeded($3, symtable[$1].type);
-                              if(convIdx1 >= 0){
-                                v3 = convIdx1;
-                              }
+                                  int convIdx1 = convertIfNeeded($3, symtable[$1].type);
+                                    if(convIdx1 >= 0){
+                                      v3 = convIdx1;
+                                    }
 
-                              gencode("mov", v3,$1,$1, symtable[$1].type);
-
+                                    gencode("mov", v3,$1,$1, symtable[$1].type);
                             }
-        | T_WRITE '(' T_ID ')' {
-                            
-                              gencode("write", $3, $3, $3, symtable[$3].type);
-                              }
+        | T_WRITE '(' T_ID ')' {gencode("write", $3, $3, $3, symtable[$3].type);}
+        | procedure_statement
+
+procedure_statement: T_ID {outFile << "call.i #" + symtable[$1].name << endl;} 
+                  | T_ID '(' expression_list ')' {}
+
+expression_list: expresion {parameter_vector.push_back($1);} 
+               | expression_list ',' expresion {parameter_vector.push_back($3);} 
+
+
 
 expresion:  expresion '+' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
@@ -304,7 +350,7 @@ expresion:  expresion '+' expresion {
 
 void yyerror(char const *s)
 {
-  printf("%s\n",s);
+  printf("%s at line no: %d\n",s, lineno);
   std::atexit;
   yylex_destroy();
   exit(1);
@@ -312,9 +358,10 @@ void yyerror(char const *s)
 
 int main()
 {
+  lineno = 1;
   outFile.open("out.asm");
   outFile << "jump.i  #lab0" << endl;
-  outFile << "lab0:" << endl;
+  
   yyparse();
   outFile.close();
   symtable.clear();
@@ -338,6 +385,7 @@ d.name=s;
 d.type=none;
 d.value = 0;
 d.address = -1;
+d.global = isGlobal;
 symtable.push_back(d);
 return i;
 };
@@ -429,8 +477,8 @@ int convertIfNeeded(int v1, vartype type){
   int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
   nextTempVariable++;
   symtable[retIdx].address = nextAddress;
-  symtable[retIdx].value = symtable[v1].value ; 
-                      
+  symtable[retIdx].value = symtable[v1].value; 
+  
 
   if(type == (vartype)real){
     convertion = "inttoreal.i\t";
@@ -464,4 +512,8 @@ int convertIfNeeded(int v1, vartype type){
   }
 
   return retId;
+}
+
+void addlineno(){
+  lineno += 1;
 }
