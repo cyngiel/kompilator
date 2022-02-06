@@ -10,6 +10,7 @@ vartype type;
 int address;
 int value;
 bool global;
+vector <vartype> type_vector;
 };
 
 typedef vector<entry> symtable_t;

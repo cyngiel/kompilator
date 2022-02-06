@@ -2,19 +2,28 @@
 #include "symtable.h"
 #include "parser.hpp"
 #include <iostream>
+#include <sstream>
 #include <fstream>
+#include <string> 
 #define YYERROR_VERBOSE 1
 
 int nextAddress = 0;
+int nextAddressLocal = 0;
+int nextAddressParameter = 0;
 int nextTempVariable = 0;
 int lineno;
 bool isGlobal = true;
 enum varmode {address, value};
 ofstream outFile;
+stringstream localCode;
 vector<int> identifier_indexes;
+vector<int> parameter_indexes;
+vector<int> id_vector;
+
 void gencode(const string m, int v1, int v2, int v3, vartype type);
 int convertIfNeeded(int v1, vartype type);
 void addlineno();
+void updateNextAddress(vartype);
 %}
 
 %token T_ID
@@ -37,14 +46,14 @@ start: program {
       int i;
       std::cout << "name\t" << "type\t" << "address\t"<< "value\t"  << "global" << endl;
       for(i=0;i<symtable.size();i++)
-      std::cout << symtable[i].name << '\t' << symtable[i].type << '\t' << symtable[i].address << '\t' << symtable[i].value << '\t' << symtable[i].global << endl;
+        std::cout << symtable[i].name << '\t' << symtable[i].type << '\t' << symtable[i].address << '\t' << symtable[i].value << '\t' << symtable[i].global << endl;
     }
 
 program: T_PROGRAM T_ID '(' start_identifiers ')' ';' 
-      declarations {isGlobal = false;}
+      declarations {isGlobal = false; outFile << endl;}
       subprogram_declarations {
                               isGlobal = true;
-                              outFile << "lab0" << endl;
+                              outFile << "lab0:" << endl;
                               }
       compound_statement{}
 
@@ -62,11 +71,7 @@ declarations: declarations T_VAR identifier_list ':' type ';' {
               symtable[identifier_indexes[i]].address = nextAddress;
               //gencode("read.i", nextAddress, (varmode)address, 0, (varmode)address, 0, (varmode)address);
               
-              if(symtable[identifier_indexes[i]].type == (vartype)real){
-                nextAddress += 8;
-              } else {
-                nextAddress += 4;
-              }
+              updateNextAddress(symtable[identifier_indexes[i]].type);
               
             }
 
@@ -87,22 +92,53 @@ subprogram_declaration:
                       subprogram_head 
                       declarations 
                       sub_compound_statement{
+                                          outFile << "enter.i\t\t" << (-1)*nextAddressLocal << endl;
+                                          nextAddressLocal = 0;
+                                          outFile << localCode.str();
+                                          localCode.str("");
                                           outFile << "leave" << endl;
-                                          outFile << "return" << endl;
+                                          outFile << "return" << endl << endl;
                                           }
 
 
 subprogram_head: T_FUNCTION T_ID arguments ':' standard_type ';'
                | T_PROCEDURE T_ID arguments ';' {
                  symtable[$2].type = (vartype)procedure;
-                 outFile << symtable[$2].name + "+" << endl;
+                 outFile << symtable[$2].name + ":" << endl;
+                 nextAddressParameter = (int) parameter_indexes.size() * 4 + 4;
+
+                 for(int i = 0; i < (int) parameter_indexes.size(); i++){
+                   
+                   symtable[parameter_indexes[i]].address = nextAddressParameter;
+                   nextAddressParameter -= 4;
+
+                   symtable[$2].type_vector.push_back(symtable[parameter_indexes[i]].type);
+                 }
+
+                 nextAddressParameter = 0;
+                 parameter_indexes.clear();
+                id_vector.clear();
                }
 
 arguments: '(' parameter_list ')'
         |
 
-parameter_list: identifier_list ':' type
-              | parameter_list ';' identifier_list ':' type
+parameter_list: identifier_list ':' type{
+                                         for(int i = 0; i < (int) id_vector.size(); i++){
+                                           symtable[id_vector[i]].type = (vartype)$3;
+                                           symtable[id_vector[i]].global = isGlobal;
+                                           parameter_indexes.push_back(id_vector[i]);
+                                         } 
+                                         id_vector.clear();
+                                        }
+              | parameter_list ';' identifier_list ':' type {
+                                         for(int i = 0; i < (int) id_vector.size(); i++){
+                                           symtable[id_vector[i]].type = (vartype)$5;
+                                           symtable[id_vector[i]].global = isGlobal;
+                                           parameter_indexes.push_back(id_vector[i]);
+                                         } 
+                                         id_vector.clear();
+                                        }
 
 
 compound_statement: T_BEGIN statement_list T_END '.'{}
@@ -125,21 +161,41 @@ statement: T_ID T_ASSIGN expresion {
                                     gencode("mov", v3,$1,$1, symtable[$1].type);
                             }
         | T_WRITE '(' T_ID ')' {gencode("write", $3, $3, $3, symtable[$3].type);}
+        | T_WRITE '(' expresion ')' {gencode("write", $3, $3, $3, symtable[$3].type);}
         | procedure_statement
 
-procedure_statement: T_ID {outFile << "call.i #" + symtable[$1].name << endl;} 
-                  | T_ID '(' expression_list ')' {}
+procedure_statement: T_ID {outFile << "call.i #\t" + symtable[$1].name << endl;} 
+                  | T_ID '(' expression_list ')' {
+                                                  for(int i = 0; i < parameter_indexes.size(); i++){
+                                                    int v1 = symtable[parameter_indexes[i]].address;
+                                                    int convIdx1 = convertIfNeeded(parameter_indexes[i], symtable[$1].type_vector[i]);
+                                                    if(convIdx1 >= 0){
+                                                      v1 = convIdx1;
+                                                    }
+                                                    localCode << "push.i \t#" + to_string(symtable[v1].address) << endl;
 
-expression_list: expresion {parameter_vector.push_back($1);} 
-               | expression_list ',' expresion {parameter_vector.push_back($3);} 
+                                                  }
+
+                                                  localCode << "call.i \t#" + symtable[$1].name << endl;
+                                                  localCode << "incsp.i \t#" + to_string(parameter_indexes.size()*4) << endl;
+                                                  parameter_indexes.clear();
+                                                }
+
+expression_list: expresion {parameter_indexes.push_back($1);} 
+               | expression_list ',' expresion {parameter_indexes.push_back($3);} 
 
 
 
 expresion:  expresion '+' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
-                            
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+
+                            updateNextAddress(symtable[retIdx].type);
+
                             symtable[retIdx].value = symtable[$1].value + symtable[$3].value; 
 
                             if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real){
@@ -148,12 +204,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
 
@@ -175,7 +225,11 @@ expresion:  expresion '+' expresion {
   | expresion '*' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+                            updateNextAddress(symtable[retIdx].type);
                             
                             symtable[retIdx].value = symtable[$1].value * symtable[$3].value; 
 
@@ -185,12 +239,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
                             int v1 = $1;
@@ -211,7 +259,11 @@ expresion:  expresion '+' expresion {
   | expresion '/' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+                            updateNextAddress(symtable[retIdx].type);
                            
                             symtable[retIdx].value = symtable[$1].value / symtable[$3].value; 
 
@@ -221,12 +273,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
                             int v1 = $1;
@@ -247,7 +293,11 @@ expresion:  expresion '+' expresion {
   | expresion '-' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+                            updateNextAddress(symtable[retIdx].type);
                             
                             symtable[retIdx].value = symtable[$1].value - symtable[$3].value; 
 
@@ -257,12 +307,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
                             int v1 = $1;
@@ -283,7 +327,11 @@ expresion:  expresion '+' expresion {
   | '-' expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+                            updateNextAddress(symtable[retIdx].type);
                             
                             symtable[retIdx].value = 0 - symtable[$2].value ; 
 
@@ -293,12 +341,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
                             int v2 = $2;
@@ -314,7 +356,11 @@ expresion:  expresion '+' expresion {
   | expresion T_MOD expresion { 
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
-                            symtable[retIdx].address = nextAddress;
+                            if(isGlobal)
+                              symtable[retIdx].address = nextAddress;
+                            else
+                              symtable[retIdx].address = nextAddressLocal;
+                            updateNextAddress(symtable[retIdx].type);
                             
                             symtable[retIdx].value = 0 - symtable[$1].value ; 
 
@@ -324,12 +370,6 @@ expresion:  expresion '+' expresion {
                             else{
                               symtable[retIdx].type = (vartype)integer;
                             }
-
-                            if(symtable[retIdx].type == (vartype)real){
-                                nextAddress += 8;
-                              } else {
-                                nextAddress += 4;
-                              }
 
                             $$ = retIdx;
                             int v1 = $1;
@@ -360,7 +400,7 @@ int main()
 {
   lineno = 1;
   outFile.open("out.asm");
-  outFile << "jump.i  #lab0" << endl;
+  outFile << "jump.i\t\t#lab0" << endl;
   
   yyparse();
   outFile.close();
@@ -378,13 +418,24 @@ int addtotable(const string& s)
 {
 int i;
 for(i=0;i<symtable.size();i++)
-  if(symtable[i].name==s)
-    return i;
+  if(symtable[i].name==s){
+    if(isGlobal) {
+      if(symtable[i].address >=0) {
+        return i;
+      }
+    } 
+    else {
+       if(symtable[i].address <0) {
+        return i;
+      }
+    }
+  }
+    
 entry d;
 d.name=s;
 d.type=none;
 d.value = 0;
-d.address = -1;
+d.address = isGlobal * 999;
 d.global = isGlobal;
 symtable.push_back(d);
 return i;
@@ -464,7 +515,11 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
     operation.append(vl3);
   }
 
-  outFile << operation << endl;
+  if(isGlobal)
+    outFile << operation << endl;
+  else
+    localCode << operation << endl;
+
 }
 
 int convertIfNeeded(int v1, vartype type){
@@ -499,12 +554,7 @@ int convertIfNeeded(int v1, vartype type){
   convertion.append(std::to_string(symtable[retIdx].address));
 
   symtable[retIdx].type = type;
-
-  if(symtable[retIdx].type == (vartype)real){
-      nextAddress += 8;
-    } else {
-      nextAddress += 4;
-    }
+  updateNextAddress(symtable[retIdx].type);
 
     outFile << convertion << endl;
 
@@ -516,4 +566,19 @@ int convertIfNeeded(int v1, vartype type){
 
 void addlineno(){
   lineno += 1;
+}
+
+void updateNextAddress(vartype type){
+  if(isGlobal)
+    if(type == (vartype)real){
+        nextAddress += 8;
+      } else {
+        nextAddress += 4;
+      }
+  else
+    if(type == (vartype)real){
+        nextAddressLocal -= 8;
+      } else {
+        nextAddressLocal -= 4;
+      }
 }
