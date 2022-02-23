@@ -19,7 +19,9 @@ program         {return T_PROGRAM;}
 begin           {return T_BEGIN;}
 end             {return T_END;}
 write           {return T_WRITE;}
+div             {return T_DIV;}
 mod             {return T_MOD;}
+
 real            {yylval = (vartype)real; return T_REAL;}
 integer	        {yylval = (vartype)integer; return T_INTEGER;}
 procedure       {return T_PROCEDURE;}
