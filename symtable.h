@@ -7,6 +7,7 @@ enum vartype {none, integer, real, procedure, function};
 struct entry {
 string name;
 vartype type;
+bool isFunction;
 int address;
 int value;
 bool global;

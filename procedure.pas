@@ -7,12 +7,12 @@ var b: real;
 
 begin
 b := 5 + 12.5 div 2 mod 10;
-write(b);
-write(x)
+write(b)
+
 end;
 
 begin
   b:=x+1;
-  p(x,3,z,x);
+x;
   write(b)
 end.
