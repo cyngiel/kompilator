@@ -11,15 +11,21 @@ NUM             {DIGIT}+
 NUMREAL         {DIGIT}+(.{DIGIT}+)?
 ASSIGN          ":="
 
+
 %%
-[ \t\r\n]+      {}
+[ \t\r]+        {}
+\n              {addlineno();}
 program         {return T_PROGRAM;}
 begin           {return T_BEGIN;}
 end             {return T_END;}
 write           {return T_WRITE;}
+div             {return T_DIV;}
 mod             {return T_MOD;}
+
 real            {yylval = (vartype)real; return T_REAL;}
 integer	        {yylval = (vartype)integer; return T_INTEGER;}
+procedure       {return T_PROCEDURE;}
+function        {return T_FUNCTION;}
 
 var             {return T_VAR;}
 {ID}	        {yylval=addtotable(string(yytext));return T_ID;}
