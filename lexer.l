@@ -26,6 +26,17 @@ real            {yylval = (vartype)real; return T_REAL;}
 integer	        {yylval = (vartype)integer; return T_INTEGER;}
 procedure       {return T_PROCEDURE;}
 function        {return T_FUNCTION;}
+if              {return T_IF;}
+then            {return T_THEN;}
+else            {return T_ELSE;}
+"<"			    {setRelop( (char*) "jl"); return T_RELOP;}
+">"			    {setRelop( (char*) "jg"); return T_RELOP;}
+"<="			{setRelop( (char*) "jle"); return T_RELOP;}
+">="			{setRelop( (char*) "jge"); return T_RELOP;}
+"="			    {setRelop( (char*) "je"); return T_RELOP;}
+"<>"			{setRelop( (char*) "jne"); return T_RELOP;}
+or              {return T_OR;}
+and             {return T_AND;}
 
 var             {return T_VAR;}
 {ID}	        {yylval=addtotable(string(yytext));return T_ID;}

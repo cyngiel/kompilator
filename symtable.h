@@ -21,7 +21,7 @@ extern symtable_t symtable;
 int addtotable(const string& s);
 int findintable(const string& s);
 void addlineno();
-
+void setRelop(char* r);
 int yylex();
 int yylex_destroy();
 void yyerror(char const *);
