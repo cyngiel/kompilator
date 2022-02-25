@@ -157,7 +157,7 @@ subprogram_declaration: subprogram_head
                        compound_statement{
                                           outFile << "enter.i\t\t#" << (-1)*nextAddressLocal << endl;  
                                           nextAddressLocal = 0;
-                                          outFile << "tututu"<< endl <<localCode.str() ;
+                                          outFile << endl <<localCode.str() ;
                                           localCode.str("");
                                           outFile << "leave" << endl;
                                           outFile << "return" << endl << endl;
@@ -173,8 +173,9 @@ subprogram_head: T_FUNCTION T_ID arguments ':' standard_type ';'{
                   nextAddressParameter = (int) parameter_indexes.size() * 4 + 8;  //BP+8, dla adresu zmiennej tymczasowej wyniku funkcji
 
                 for(int i = 0; i < (int) parameter_indexes.size(); i++){
-
+                  
                    symtable[parameter_indexes[i]].address = nextAddressParameter;
+                   //std::cout << symtable[parameter_indexes[i]].address << "asdasd  " << symtable[parameter_indexes[i]].name <<endl;
                    nextAddressParameter -= 4;
 
                    symtable[$2].type_vector.push_back(symtable[parameter_indexes[i]].type);
@@ -215,6 +216,8 @@ parameter_list: identifier_list ':' type{
                                          for(int i = 0; i < (int) identifier_indexes.size(); i++){
                                            symtable[identifier_indexes[i]].type = (vartype)$3;
                                            symtable[identifier_indexes[i]].global = isGlobal;
+                                           symtable[identifier_indexes[i]].isArgument = true;
+                                           
                                            parameter_indexes.push_back(identifier_indexes[i]);
                                          } 
                                          identifier_indexes.clear();
@@ -223,6 +226,7 @@ parameter_list: identifier_list ':' type{
                                          for(int i = 0; i < (int) identifier_indexes.size(); i++){
                                            symtable[identifier_indexes[i]].type = (vartype)$5;
                                            symtable[identifier_indexes[i]].global = isGlobal;
+                                           symtable[identifier_indexes[i]].isArgument = true;
                                            parameter_indexes.push_back(identifier_indexes[i]);
                                          } 
                                          identifier_indexes.clear();
@@ -328,8 +332,8 @@ procedure_call: T_ID {
                                                     yyerror("Procedure called with wrong number of arguments");
 
                                                   for(int i = 0; i < parameter_indexes.size(); i++){ //odkladanie na stosie adresow parametrow oraz sprawdzanie ich typow
-                                                    
-                                                    if(symtable[parameter_indexes[i]].type == (vartype)integer || symtable[parameter_indexes[i]].type == (vartype)integer){
+
+                                                    if(symtable[parameter_indexes[i]].type == (vartype)real || symtable[parameter_indexes[i]].type == (vartype)integer){
 
                                                       int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                                                       nextTempVariable++;
@@ -369,14 +373,14 @@ procedure_call: T_ID {
                                                                 symtable[retIdx2].address = nextAddressLocal;
                                                               }
                                                             parameter_indexes[i] = retIdx2;
-
+                                                          }
                                                             if(symtable[parameter_indexes[i]].type == (vartype)integer)
                                                               symtable[parameter_indexes[i]].type = (vartype)real;
 
                                                             gencode("mov", parameter_indexes[i], retIdx, 0, symtable[parameter_indexes[i]].type);
                                                             parameter_indexes[i] = retIdx;
 
-                                                          }
+                                                          
 
                                                     }
                                                     
@@ -388,7 +392,10 @@ procedure_call: T_ID {
                                                     if(convIdx1 != -1){
                                                       v1 = convIdx1;
                                                     }
-                                                    localCode << "push.i\t\t#" + to_string(symtable[v1].address) << endl;
+                                                    if(symtable[parameter_indexes[i]].address == -1)
+                                                      localCode << "push.i\t\t#" + symtable[v1].name << endl;
+                                                    else
+                                                      localCode << "push.i\t\t#" + to_string(symtable[v1].address) << endl;
 
                                                   }
 
@@ -674,8 +681,10 @@ expresion:  expresion '+' expresion {
   | '(' expresion ')' {$$ = $2;}
    | T_ID '(' expression_list ')' {
                                     for(int i = 0; i < parameter_indexes.size(); i++){
+
                                       if(symtable[parameter_indexes[i]].type == (vartype)real || symtable[parameter_indexes[i]].type == (vartype)integer)                                                        if(symtable[parameter_indexes[i]].type == (vartype)real && symtable[$1].type_vector[i] == (vartype)integer)
                                                           {
+
                                                             int retIdx2 = addtotable("$t" + to_string(nextTempVariable)); 
                                                             nextTempVariable++;
                                                                                       
@@ -710,10 +719,39 @@ expresion:  expresion '+' expresion {
                                         v2 = convIdx2;
                                       }
 
+                                      if(symtable[v2].address == -1){
+                                        int retIdx2 = addtotable("$t" + to_string(nextTempVariable)); 
+                                        nextTempVariable++;
+                                                                  
+                                        symtable[retIdx2].value = symtable[v2].value; 
+
+                                        symtable[retIdx2].type = symtable[v2].type;
+
+                                        if(isGlobal)
+                                          {
+                                            symtable[retIdx2].address = nextAddress;
+                                            updateNextAddress(symtable[retIdx2].type);
+                                          }
+                                        else
+                                          {
+                                            updateNextAddress(symtable[retIdx2].type);
+                                            symtable[retIdx2].address = nextAddressLocal;
+                                          }
+                                        parameter_indexes[i] = retIdx2;
+
+                                    
+
+                                        gencode("mov", v2, retIdx2, 0, symtable[parameter_indexes[i]].type);
+                                        parameter_indexes[i] = retIdx2;
+                                        v2 = retIdx2;
+                                      }
+
+
                                       if(isGlobal)
-                                        outFile << "push.i\t\t#" << to_string(symtable[v2].address) << endl;
+                                          outFile << "push.i\t\t#" << to_string(symtable[v2].address) << endl;
                                       else
-                                        outFile << "push.i\t\t#BP" << to_string(symtable[v2].address) << endl;
+                                          outFile << "push.i\t\t#BP" << to_string(symtable[v2].address) << endl;
+                                        
                                     }
 
                                     int retIdxFP = 0; //zmienna zwracająca jesli jest funkcja lub proceedura
@@ -947,7 +985,7 @@ for(i=0;i<symtable.size();i++)
   if(symtable[i].name==s){
     if(symtable[i].type == (vartype)procedure || symtable[i].isFunction)
       return i;
-    if(isGlobal) {
+    if(isGlobal || symtable[i].isArgument) {
       if(symtable[i].address >=0) {
         return i;
       }
@@ -966,6 +1004,7 @@ d.value = 0;
 d.address = -1;
 d.global = isGlobal;
 d.isFunction = false;
+d.isArgument = false;
 symtable.push_back(d);
 return i;
 };
@@ -1021,6 +1060,8 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v1].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl1);
   }
   else if(m == "mov"){
@@ -1033,6 +1074,8 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v1].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl1 + ", ");
     }
     
@@ -1040,6 +1083,8 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v2].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl2);
   }
   else if(m == "jump"){
@@ -1057,6 +1102,8 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v1].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl1 + ", ");
     }
 
@@ -1069,6 +1116,8 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v2].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl2);
     }
 
@@ -1080,18 +1129,24 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
       operation.append("#");
     else if(symtable[v1].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl1 + ", ");
 
     if(symtable[v2].address == -1)
       operation.append("#");
     else if(symtable[v2].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl2 + ", ");
 
     if(symtable[v3].address == -1)
       operation.append("#");
     else if(symtable[v3].address < -1)
       operation.append("BP");
+    else if(!isGlobal)
+      operation.append("*BP+");
     operation.append(vl3);
   }
 
@@ -1131,6 +1186,7 @@ int convertIfNeeded(int v1, vartype type){
   }
   if(symtable[v1].address < -1)
       convertion.append("BP");
+      
   convertion.append(vl1 + ", ");
 
   symtable[retIdx].type = type;

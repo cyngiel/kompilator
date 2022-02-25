@@ -11,6 +11,7 @@ bool isFunction;
 int address;
 float value;
 bool global;
+bool isArgument;
 vector <vartype> type_vector;
 };
 
