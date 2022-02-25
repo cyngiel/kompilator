@@ -22,6 +22,8 @@ vector<int> parameter_indexes;
 
 int relop_true, relop_false = 0;
 char* relop;
+int relop_counter = 0;
+int while_start;
 int labCounter = 0;
 
 void gencode(const string m, int v1, int v2, int v3, vartype type);
@@ -50,6 +52,9 @@ void updateNextAddress(vartype);
 %token T_RELOP
 %token T_OR
 %token T_AND
+%token T_WHILE
+%token T_DO
+%token T_NOT
 
 %%
 start: program {
@@ -64,7 +69,7 @@ program: T_PROGRAM T_ID '(' start_identifiers ')' ';'
       declarations {isGlobal = false; outFile << endl;}
       subprogram_declarations {
                               isGlobal = true;
-                              outFile << "lab" << labCounter << ":" << endl;
+                              outFile << endl << "lab" << labCounter << ":" << endl;
                               labCounter++;
                               }
       compound_statement{}
@@ -195,6 +200,13 @@ statement_list: statement
               
 
 statement: T_ID T_ASSIGN expresion {
+                                  if(symtable[$1].type == (vartype)none){
+                                    std::ostringstream oss;
+                                    oss << "Undeclared variable '" << symtable[$1].name << "'";
+                                    std::string error = oss.str();
+                                    yyerror(error.c_str());
+                                  }
+
                                   symtable[$1].value = symtable[$3].value; 
                                   int v3 = $3;  
 
@@ -245,8 +257,60 @@ statement: T_ID T_ASSIGN expresion {
           gencode("je", $3, relop_false, $3, (vartype)integer);
         }
         statement { outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;}
-        T_ELSE { outFile << "lab" << to_string(labCounter) << ":" << endl; labCounter++;}
-        statement { outFile << "lab" << to_string(labCounter) << ":" << endl;}
+        T_ELSE { outFile << endl << "lab" << to_string(labCounter) << ":" << endl; labCounter++;}
+        statement { outFile << endl << "lab" << to_string(labCounter) << ":" << endl; labCounter++;}
+        
+        |T_WHILE{
+                while_start = labCounter;
+
+                relop_true = addtotable("true");
+                symtable[relop_true].type = integer; 
+                symtable[relop_true].value = 1; 
+              
+                if(isGlobal)
+                {
+                  symtable[relop_true].address = nextAddress;
+                  updateNextAddress(symtable[relop_true].type);
+                }
+              else
+                {
+                  updateNextAddress(symtable[relop_true].type);
+                  symtable[relop_true].address = nextAddressLocal;
+                }
+
+
+                relop_false = addtotable("false");
+                symtable[relop_false].type = integer; 
+              
+                if(isGlobal)
+                {
+                  symtable[relop_false].address = nextAddress;
+                  updateNextAddress(symtable[relop_false].type);
+                }
+              else
+                {
+                  updateNextAddress(symtable[relop_false].type);
+                  symtable[relop_false].address = nextAddressLocal;
+                }
+
+
+                  outFile << endl << "lab" << to_string(labCounter + 1) << ":" << endl;
+                  labCounter += 2;
+                }
+            expresion
+            T_DO{
+                  labCounter -= 2*relop_counter; //wracamy bo expression zwieksza o 2*relop_counter petle
+                  labCounter = while_start;
+                  gencode("je", $3, relop_false, 0, (vartype)integer);
+                }
+            statement {
+                        outFile << "jump.i\t\t#lab" << to_string(while_start +1) << endl;
+                        outFile << endl << "lab" << to_string(while_start) << ":" << endl;
+                        labCounter += 2*relop_counter + 2;
+                        relop_counter = 0;
+                      }
+
+
 
 
 
@@ -535,7 +599,7 @@ expresion:  expresion '+' expresion {
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                                                         
-                            symtable[retIdx].value = symtable[$1].value % symtable[$3].value; 
+                            symtable[retIdx].value = (int)symtable[$1].value % (int)symtable[$3].value; 
 
                             if(symtable[$1].type == (vartype)real){
                               symtable[retIdx].type = (vartype)real;
@@ -736,7 +800,11 @@ expresion:  expresion '+' expresion {
                               gencode("and", $1, $3, retIdx, (vartype)integer);
                              }
   | expresion T_RELOP expresion {
-                                  gencode(relop, $1, $3, 0, (vartype)integer);
+
+                                  if(symtable[$1].type == (vartype)real || symtable[$3].type == (vartype)real)
+                                    gencode(relop, $1, $3, 0, (vartype)real);
+                                  else
+                                    gencode(relop, $1, $3, 0, (vartype)integer);
                                   int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                                   symtable[retIdx].type = (vartype)integer; 
                                   nextTempVariable++;
@@ -756,21 +824,57 @@ expresion:  expresion '+' expresion {
                                   outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
 
                                   //dla wyniky true
-                                  outFile << "lab" << to_string(labCounter) << ":" << endl;
+                                  outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
                                   gencode("mov", relop_true, retIdx, 0, (vartype)integer);
 
                                   labCounter++;
-                                  outFile << "lab" << to_string(labCounter) << ":" << endl;
+                                  outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
                                   labCounter++;
+
+                                  relop_counter += 1;
                                   $$ = retIdx;
 
                                   }
+
+  | T_NOT expresion {
+                      gencode("je", $2, relop_false, 0, (vartype)integer);
+
+                      int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
+                      symtable[retIdx].type = (vartype)integer; 
+                      nextTempVariable++;
+                    if(isGlobal)
+                      {
+                        symtable[retIdx].address = nextAddress;
+                        updateNextAddress(symtable[retIdx].type);
+                      }
+                    else
+                      {
+                        updateNextAddress(symtable[retIdx].type);
+                        symtable[retIdx].address = nextAddressLocal;
+                      }
+
+                      gencode("mov", relop_false, retIdx, 0, (vartype)integer);
+                      outFile << "jump.i\t\t#lab" << to_string(labCounter +1) << endl;
+
+                      //true
+                      outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      gencode("mov", relop_true, retIdx, 0, (vartype)integer);
+                      labCounter++;
+
+                      outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      gencode("mov", relop_true, retIdx, 0, (vartype)integer);
+                      labCounter++;
+
+                      relop_counter++;
+                      $$ = retIdx;
+
+                    }
 
 %%
 
 void yyerror(char const *s)
 {
-  printf("%s in line no: %d\n",s, lineno);
+  printf("Error: %s in line no: %d\n",s, lineno);
   std::atexit;
   yylex_destroy();
   exit(1);
@@ -780,7 +884,7 @@ int main()
 {
   lineno = 1;
   outFile.open("out.asm");
-  outFile << "jump.i\t\t#lab0" << endl;
+  outFile << "jump.i\t\t#lab0";
   
   yyparse();
 
@@ -902,17 +1006,30 @@ void gencode(const string m, int v1, int v2, int v3, vartype type){
     operation.append(to_string(labCounter));
   }
   else if(m == "jl" || m == "jg" || m == "jle" || m == "jge" || m == "je" || m == "jne"){
+    if(symtable[v1].name == "true")
+      operation.append("#1, ");
+    else if(symtable[v1].name == "false")
+      operation.append("#0, ");
+    else {
+    
     if(symtable[v1].address == -1)
       operation.append("#");
     else if(symtable[v1].address < -1)
       operation.append("BP");
     operation.append(vl1 + ", ");
+    }
 
+    if(symtable[v2].name == "true")
+      operation.append("#1");
+    else if(symtable[v2].name == "false")
+      operation.append("#0");
+    else {
     if(symtable[v2].address == -1)
       operation.append("#");
     else if(symtable[v2].address < -1)
       operation.append("BP");
     operation.append(vl2);
+    }
 
     operation.append(", #lab");
     operation.append(to_string(labCounter));

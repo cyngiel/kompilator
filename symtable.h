@@ -9,7 +9,7 @@ string name;
 vartype type;
 bool isFunction;
 int address;
-int value;
+float value;
 bool global;
 vector <vartype> type_vector;
 };

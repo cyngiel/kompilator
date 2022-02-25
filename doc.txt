@@ -5,3 +5,4 @@ nextAddressParameter    next_parameter_address
 parameter_indexes       parameter_vector
 isGlobal                actual_scope
 type_vector (symtable)  vartype_vector  
+while_start             while_entry_label

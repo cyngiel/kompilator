@@ -37,11 +37,14 @@ else            {return T_ELSE;}
 "<>"			{setRelop( (char*) "jne"); return T_RELOP;}
 or              {return T_OR;}
 and             {return T_AND;}
+not             {return T_NOT;}
+do              {return T_DO;}
+while           {return T_WHILE;}
 
 var             {return T_VAR;}
 {ID}	        {yylval=addtotable(string(yytext));return T_ID;}
-{NUM}           {yylval=addtotable(string(yytext));symtable[yylval].value = stoi(yytext);symtable[yylval].type = (vartype) integer; return T_NUM;}
-{NUMREAL}       {yylval=addtotable(string(yytext));symtable[yylval].value = stoi(yytext);symtable[yylval].type = (vartype) real; return T_NUM;}
+{NUM}           {yylval=addtotable(string(yytext));symtable[yylval].value = stof(yytext);symtable[yylval].type = (vartype) integer; return T_NUM;}
+{NUMREAL}       {yylval=addtotable(string(yytext));symtable[yylval].value = stof(yytext);symtable[yylval].type = (vartype) real; return T_NUM;}
 {ASSIGN}        {return T_ASSIGN;}
 
 .	            {return yytext[0];}
