@@ -680,6 +680,8 @@ expresion:  expresion '+' expresion {
                             }
   | '(' expresion ')' {$$ = $2;}
    | T_ID '(' expression_list ')' {
+                                                  if(parameter_indexes.size() != symtable[$1].type_vector.size())
+                                                    yyerror("Function called with wrong number of arguments");
                                     for(int i = 0; i < parameter_indexes.size(); i++){
 
                                       if(symtable[parameter_indexes[i]].type == (vartype)real || symtable[parameter_indexes[i]].type == (vartype)integer)                                                        if(symtable[parameter_indexes[i]].type == (vartype)real && symtable[$1].type_vector[i] == (vartype)integer)
