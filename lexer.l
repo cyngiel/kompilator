@@ -19,6 +19,7 @@ program         {return T_PROGRAM;}
 begin           {return T_BEGIN;}
 end             {return T_END;}
 write           {return T_WRITE;}
+read            {return T_READ;}
 div             {return T_DIV;}
 mod             {return T_MOD;}
 
