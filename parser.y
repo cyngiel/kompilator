@@ -57,6 +57,19 @@ void updateNextAddress(vartype);
 %token T_DO
 %token T_NOT
 
+%left T_MOD
+%left T_DIV
+%left T_RELOP
+%left T_OR
+%left T_AND
+%left '+'
+%left '*'
+%left '/'
+%left '-'
+%left T_NOT
+
+
+
 %%
 start: program {
       outFile << "exit" << endl;
@@ -157,7 +170,7 @@ subprogram_declaration: subprogram_head
                        compound_statement{
                                           outFile << "enter.i\t\t#" << (-1)*nextAddressLocal << endl;  
                                           nextAddressLocal = 0;
-                                          outFile << endl <<localCode.str() ;
+                                          outFile <<localCode.str() ;
                                           localCode.str("");
                                           outFile << "leave" << endl;
                                           outFile << "return" << endl << endl;
@@ -269,7 +282,7 @@ statement: T_ID T_ASSIGN expresion {
                                           }
         | T_READ '(' expression_list ')' {
                                           for(int i = 0; i<parameter_indexes.size(); i++){
-                                            gencode("write", parameter_indexes[i], 0, 0,symtable[parameter_indexes[i]].type);
+                                            gencode("read", parameter_indexes[i], 0, 0,symtable[parameter_indexes[i]].type);
                                           }
                                           parameter_indexes.clear();
                                           }
@@ -280,14 +293,34 @@ statement: T_ID T_ASSIGN expresion {
         T_THEN{
           gencode("je", $3, relop_false, 0, (vartype)integer);
         }
-        statement { outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;}
-        T_ELSE { outFile << endl << "lab" << to_string(labCounter) << ":" << endl; labCounter++;}
-        statement { outFile << endl << "lab" << to_string(labCounter) << ":" << endl; labCounter++;}
+        statement { 
+          if(isGlobal)
+            outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
+          else
+            localCode << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
+          }
+        T_ELSE { 
+          if(isGlobal)
+            outFile << endl << "lab" << to_string(labCounter) << ":" << endl; 
+           else
+           localCode << endl << "lab" << to_string(labCounter) << ":" << endl; 
+            labCounter++;
+            }
+            
+        statement { 
+          if(isGlobal)
+            outFile << endl << "lab" << to_string(labCounter) << ":" << endl; 
+          else 
+            localCode << endl << "lab" << to_string(labCounter) << ":" << endl; 
+          labCounter++;
+          }
         
         |T_WHILE{
                 while_start = labCounter;
-
-                  outFile << endl << "lab" << to_string(labCounter + 1) << ":" << endl;
+                  if(isGlobal)
+                    outFile << endl << "lab" << to_string(labCounter + 1) << ":" << endl;
+                  else
+                    localCode << endl << "lab" << to_string(labCounter + 1) << ":" << endl;
                   labCounter += 2;
                 }
             expresion
@@ -297,8 +330,15 @@ statement: T_ID T_ASSIGN expresion {
                   gencode("je", $3, relop_false, 0, (vartype)integer);
                 }
             statement {
-                        outFile << "jump.i\t\t#lab" << to_string(while_start +1) << endl;
-                        outFile << endl << "lab" << to_string(while_start) << ":" << endl;
+                      if(isGlobal){
+                          outFile << "jump.i\t\t#lab" << to_string(while_start +1) << endl;
+                          outFile << endl << "lab" << to_string(while_start) << ":" << endl;
+                      }
+                      else {
+                        localCode << "jump.i\t\t#lab" << to_string(while_start +1) << endl;
+                          localCode << endl << "lab" << to_string(while_start) << ":" << endl;
+                      }
+                        
                         labCounter += 2*relop_counter + 2;
                         relop_counter = 0;
                       }
@@ -309,7 +349,10 @@ statement: T_ID T_ASSIGN expresion {
 
 procedure_call: T_ID {
                       if(symtable[$1].type == (vartype)procedure)
+                      if(isGlobal)
                         outFile << "call.i #\t" + symtable[$1].name << endl;
+                      else
+                        localCode << "call.i #\t" + symtable[$1].name << endl;
                       else
                         if(symtable[$1].type == (vartype)none){
                           std::ostringstream oss;
@@ -648,7 +691,7 @@ expresion:  expresion '+' expresion {
                             int retIdx = addtotable("$t" + to_string(nextTempVariable)); 
                             nextTempVariable++;
                                                         
-                            symtable[retIdx].value = (int)symtable[$1].value % (int)symtable[$3].value; 
+                           // symtable[retIdx].value = (int)symtable[$1].value % (int)symtable[$3].value; 
 
                             if(symtable[$1].type == (vartype)real){
                               symtable[retIdx].type = (vartype)real;
@@ -752,7 +795,10 @@ expresion:  expresion '+' expresion {
                                       if(isGlobal)
                                           outFile << "push.i\t\t#" << to_string(symtable[v2].address) << endl;
                                       else
-                                          outFile << "push.i\t\t#BP" << to_string(symtable[v2].address) << endl;
+                                        if(symtable[v2].address < 0)
+                                          localCode << "push.i\t\t#BP" << to_string(symtable[v2].address) << endl;
+                                        else
+                                          localCode << "push.i\t\tBP+" << to_string(symtable[v2].address) << endl;
                                         
                                     }
 
@@ -790,10 +836,21 @@ expresion:  expresion '+' expresion {
                                     if(isGlobal)
                                       outFile << "push.i\t\t#" << symtable[retIdxFP].address << endl;
                                     else
-                                      outFile << "push.i\t\t#BP" << symtable[retIdxFP].address << endl;
-                                    outFile << "call.i\t\t#" + symtable[$1].name << endl; 
-                                    outFile << "incsp.i\t\t#" + to_string(parameter_indexes.size()*4 + 4) << endl; // tyle ile push + 4 dla wyniku
+                                      if(symtable[retIdxFP].address < 0)
+                                        localCode << "push.i\t\t#BP" << symtable[retIdxFP].address << endl;
+                                      else
+                                        localCode << "push.i\t\t#BP+" << symtable[retIdxFP].address << endl;
 
+                                    if(isGlobal){
+                                        outFile << "call.i\t\t#" + symtable[$1].name << endl; 
+                                    outFile << "incsp.i\t\t#" + to_string(parameter_indexes.size()*4 + 4) << endl; // tyle ile push + 4 dla wyniku
+                                    }
+                                    else {
+                                      localCode << "call.i\t\t#" + symtable[$1].name << endl; 
+                                    localCode << "incsp.i\t\t#" + to_string(parameter_indexes.size()*4 + 4) << endl; // tyle ile push + 4 dla wyniku
+
+                                    }
+                                    
                                     //symtable[$1].address = symtable[retIdxFP].address;
                                     symtable[$1].type = symtable[retIdxFP].type;
                                       
@@ -826,9 +883,16 @@ expresion:  expresion '+' expresion {
             symtable[retIdx].address = nextAddressLocal;
           }
 
+          if(isGlobal){
           outFile << "push.i\t\t#" + symtable[retIdx].address << endl;
           outFile << "call.i\t\t#" + symtable[$1].name << endl;
           outFile << "incsp.i\t\t#4" << endl;
+          }
+          else{
+            localCode << "push.i\t\t#" + symtable[retIdx].address << endl;
+          localCode << "call.i\t\t#" + symtable[$1].name << endl;
+          localCode << "incsp.i\t\t#4" << endl;
+          }
           
           symtable[$1].address = symtable[retIdx].address; //adres wyniku
           symtable[$1].type = symtable[retIdx].type;
@@ -902,14 +966,23 @@ expresion:  expresion '+' expresion {
 
                                   //dla wyniku false
                                   gencode("mov", relop_false, retIdx, 0, (vartype)integer);
-                                  outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
+                                  if(isGlobal)
+                                    outFile << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
+                                  else
+                                     localCode << "jump.i\t\t#lab" << to_string(labCounter+1) << endl;
 
                                   //dla wyniky true
-                                  outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                                  if(isGlobal)
+                                    outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                                  else
+                                    localCode << endl << "lab" << to_string(labCounter) << ":" << endl;
                                   gencode("mov", relop_true, retIdx, 0, (vartype)integer);
 
                                   labCounter++;
-                                  outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                                  if(isGlobal)
+                                    outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                                  else
+                                    localCode << endl << "lab" << to_string(labCounter) << ":" << endl;
                                   labCounter++;
 
                                   relop_counter += 1;
@@ -935,14 +1008,23 @@ expresion:  expresion '+' expresion {
                       }
 
                       gencode("mov", relop_false, retIdx, 0, (vartype)integer);
-                      outFile << "jump.i\t\t#lab" << to_string(labCounter +1) << endl;
+                      if(isGlobal)
+                        outFile << "jump.i\t\t#lab" << to_string(labCounter +1) << endl;
+                      else
+                        localCode << "jump.i\t\t#lab" << to_string(labCounter +1) << endl;
 
                       //true
-                      outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      if(isGlobal)
+                        outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      else
+                        localCode << endl << "lab" << to_string(labCounter) << ":" << endl;
                       gencode("mov", relop_true, retIdx, 0, (vartype)integer);
                       labCounter++;
 
-                      outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      if(isGlobal)
+                        outFile << endl << "lab" << to_string(labCounter) << ":" << endl;
+                      else
+                        localCode << endl << "lab" << to_string(labCounter) << ":" << endl;
                       gencode("mov", relop_true, retIdx, 0, (vartype)integer);
                       labCounter++;
 
@@ -965,7 +1047,7 @@ int main()
 {
   lineno = 1;
   outFile.open("out.asm");
-  outFile << "jump.i\t\t#lab0";
+  outFile << "jump.i\t\t#lab0" << endl;
   
   yyparse();
 
