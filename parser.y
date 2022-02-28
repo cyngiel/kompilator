@@ -57,17 +57,12 @@ void updateNextAddress(vartype);
 %token T_DO
 %token T_NOT
 
-%left T_MOD
-%left T_DIV
-%left T_RELOP
-%left T_OR
+%left T_OR 
 %left T_AND
-%left '+'
-%left '*'
-%left '/'
-%left '-'
 %left T_NOT
-
+%left T_RELOP 
+%left '+' '-'
+%left '/' '*' T_MOD T_DIV
 
 
 %%
@@ -317,6 +312,7 @@ statement: T_ID T_ASSIGN expresion {
         
         |T_WHILE{
                 while_start = labCounter;
+                $$ = while_start;
                   if(isGlobal)
                     outFile << endl << "lab" << to_string(labCounter + 1) << ":" << endl;
                   else
@@ -326,7 +322,7 @@ statement: T_ID T_ASSIGN expresion {
             expresion
             T_DO{
                   labCounter -= 2*relop_counter; //wracamy bo expression zwieksza o 2*relop_counter petle
-                  labCounter = while_start;
+                  //labCounter = while_start;
                   gencode("je", $3, relop_false, 0, (vartype)integer);
                 }
             statement {
@@ -340,7 +336,7 @@ statement: T_ID T_ASSIGN expresion {
                       }
                         
                         labCounter += 2*relop_counter + 2;
-                        relop_counter = 0;
+                      relop_counter = 0;
                       }
 
 
