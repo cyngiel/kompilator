@@ -1,19 +1,12 @@
 program example(input, output);
 var x, y: integer;
 var g,h:real;
-
-function gcd(a, b: integer):integer;
-var g,i:integer;
+ 
+function sum(a,b: integer) : integer;
 begin
-   if (1 < 2)then
-    g:=0.0
-  else
-    g:=1.0
+ sum := a + b
 end;
-
-
+ 
 begin
-  x:=1;
-  y:=2;
-  write(gcd(x, y))
+  write(sum(sum(sum(3, 4), 2),sum(3, 4)))
 end.

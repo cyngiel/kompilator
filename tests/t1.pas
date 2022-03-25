@@ -1,8 +1,8 @@
-program sort(input,output);
-var i,j,k:integer;
-var x,y,z:real;
+program example(input, output);
+var x, y: integer;
+var g,h:real;
 
 begin
-  while not (i < j) or (k > j) do
-    x:=x+1.35
+  g:=x+y*h;
+  write(g)
 end.

@@ -12,5 +12,5 @@ end;
 
 begin
   g:=3.25;
-  write(f(2 ,5.5))
+  write(f(5.5))
 end.
