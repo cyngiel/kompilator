@@ -6,11 +6,11 @@ function f(a, b: real):real;
 var q:integer;
 begin
    q:=4;
-   f:=a+b
+   f:=a+b+q
 end;
 
 
 begin
   g:=3.25;
-  write(f(5.5))
+  write(f(g,10.28))
 end.

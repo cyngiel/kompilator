@@ -1,7 +1,0 @@
-moje                    ddr4
-parameter_indexes       parameter_vector
-identifier_indexes      id_vector
-nextAddressParameter    next_parameter_address 
-parameter_indexes       parameter_vector
-isGlobal                actual_scope
-type_vector (symtable)  vartype_vector  
